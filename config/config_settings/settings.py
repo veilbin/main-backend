@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     # apps 
     'authentication',
     'users',
+    'files',
 
 
     # libraries 
