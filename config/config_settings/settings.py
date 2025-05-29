@@ -21,11 +21,12 @@ INSTALLED_APPS = [
 
     # apps 
     'authentication',
+    'users',
 
 
     # libraries 
     'rest_framework',
-    'rest_framework.simplejwt.token_blacklist',
+    'rest_framework_simplejwt.token_blacklist',
 ]
 
 MIDDLEWARE = [
