@@ -1,3 +1,4 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -59,12 +60,14 @@ class FileView(APIView):
         if serializer.is_valid():
             filename = serializer.validated_data['filename']
             file = serializer.validated_data['file']
+            is_shareable = serializer.validated_data['is_shareable']
             expiration = serializer.validated_data['expiration']
             
             try:
                 created_file = File.objects.create(
                     filename = filename,
                     file = file,
+                    is_shareable = is_shareable,
                     owner = request.user,
                     expiration = expiration
                 )
@@ -82,4 +85,65 @@ class FileView(APIView):
                 )
 
 
+# file details view 
+class FileDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated,]
+    serializer_class = FileSeriailizer
 
+    # get object 
+    def get_object(self,pk):
+        try:
+            return File.objects.filter(pk=pk, owner=self.request.user)
+        
+        except File.DoesNotExist:
+            return Http404("File does not exist")
+        
+        except Exception as e:
+            logger.error(f": Error fetching user file details: {e}", exc_info=True)
+            return ResponseUtils.error_response(
+                message= "An unexpected error occurred",
+                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+    # get file 
+    def get(self, request, pk, *args, **kwargs):
+        try:
+            file = self.get_object(pk)
+            serializer = self.serializer_class(file)
+            logger.Info(f": user {self.request.user} accessed file {file}")
+            return ResponseUtils.success_response(
+                message= "File fetched",
+                data= serializer.data,
+                status_code= status.HTTP_200_OK
+            )
+        
+        except Exception as e:
+            logger.error(f": Error fetching file data: {e}", exc_info=True)
+            return ResponseUtils.error_response(
+                message= "An unexpected error occurred",
+                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+
+# file share view 
+class FileShareView(APIView):
+    permission_classes = [permissions.AllowAny,]
+    serializer_class = FileSeriailizer
+
+    # get file 
+    def get(self, request, share_token):
+        try:
+            file = get_object_or_404(File, share_token=share_token, is_shareable=True)
+            serializer = self.serializer_class(file, context={'request':request})
+            return ResponseUtils.success_response(
+                message= "File fetched",
+                data= serializer.data,
+                status_code= status.HTTP_200_OK
+            )
+        
+        except Exception as e:
+            logger.error(f"Error fetching file in FileShare View: {e}", exc_info=True)
+            return ResponseUtils.error_response(
+                message= "An unexpected error occurred",
+                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
