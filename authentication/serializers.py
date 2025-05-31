@@ -5,7 +5,7 @@ import re
 User = get_user_model()
 
 # create user registration serializer
-class UserRegistrationSerializer(serializers.ModelSerializer):
+class SignupSerializer(serializers.ModelSerializer):
     password = serializers.CharField(required=True)
     password_again = serializers.CharField(required=True)
 
@@ -67,13 +67,13 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return data
     
 # login serializer
-class UserLoginSerializer(serializers.Serializer):
+class SigninSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True, max_length=60, min_length=6)
     password = serializers.CharField(required=True, min_length=8)
 
 
 # change password serializer
-class UserChangePasswordSerializer(serializers.Serializer):
+class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True)
     new_password_again = serializers.CharField(required=True)
@@ -123,7 +123,7 @@ class UserChangePasswordSerializer(serializers.Serializer):
 
 
 # forgot password serializer
-class UserForgotPasswordSerializer(serializers.Serializer):
+class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True, max_length=60, min_length=6)
 
     # validate email
@@ -146,7 +146,7 @@ class UserForgotPasswordSerializer(serializers.Serializer):
 
 
 # reset password serializer
-class UserResetPasswordSerializer(serializers.Serializer):
+class ResetPasswordSerializer(serializers.Serializer):
     password_reset_token = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True)
     new_password_again = serializers.CharField(required=True)
@@ -190,15 +190,15 @@ class UserResetPasswordSerializer(serializers.Serializer):
 
 
 # email activation serializers
-class UserEmailActivationSerializer(serializers.Serializer):
+class EmailActivationSerializer(serializers.Serializer):
     email_activation_token = serializers.CharField(required=True)
 
 # account reactivation serializer
-class UserAccountReactivationSerializer(serializers.Serializer):
+class AccountReactivationSerializer(serializers.Serializer):
     account_reactivation_token = serializers.CharField(required=True)
 
 # change email serializer 
-class UserEmailChangeSerializer(serializers.ModelSerializer):
+class ChangeEmailSerializer(serializers.ModelSerializer):
     new_email = serializers.EmailField(max_length=80, required=True)
 
     class Meta:
@@ -226,5 +226,5 @@ class UserEmailChangeSerializer(serializers.ModelSerializer):
         return value
     
 # new link request serializer 
-class UserLinkRequestSerializer(serializers.Serializer):
+class EmailActivationRequestSeriaizer(serializers.Serializer):
     email = serializers.EmailField(required=True)
