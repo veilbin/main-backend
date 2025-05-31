@@ -26,7 +26,7 @@ class FileView(APIView):
     def get_queryset(self):
         user = self.request.user
         try:
-            return File.objects.filter(owner=user)
+            return File.objects.filter(owner=user, expiration__gte=timezone.now())
         except File.DoesNotExist:
             raise Http404("File does not exist")
         except Exception as e:
@@ -93,7 +93,7 @@ class FileDetailView(APIView):
     # get object 
     def get_object(self,pk):
         try:
-            return File.objects.filter(pk=pk, owner=self.request.user)
+            return File.objects.filter(pk=pk, owner=self.request.user, expiration__gte=timezone.now())
         
         except File.DoesNotExist:
             return Http404("File does not exist")
@@ -133,7 +133,20 @@ class FileShareView(APIView):
     # get file 
     def get(self, request, share_token):
         try:
-            file = get_object_or_404(File, share_token=share_token, is_shareable=True)
+            file = get_object_or_404(
+                File.objects.filter( 
+                    share_token=share_token, 
+                    is_shareable=True,
+                    expiration__gte=timezone.now()
+                ).first()
+            )
+
+            if not file:
+                return ResponseUtils.error_response(
+                    message= "File not found",
+                    status_code= status.HTTP_404_NOT_FOUND
+                )
+            
             serializer = self.serializer_class(file, context={'request':request})
             return ResponseUtils.success_response(
                 message= "File fetched",
@@ -147,3 +160,56 @@ class FileShareView(APIView):
                 message= "An unexpected error occurred",
                 status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+# toggle shareable option 
+class ToggleShareOptionView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        try:
+            # get file id from request 
+            file_id = request.data.get('file_id')
+            if not file_id:
+                return ResponseUtils.error_response(
+                    message= "File id is required",
+                    status_code= status.HTTP_400_BAD_REQUEST
+                )
+            # convert file id to int 
+            try:
+                file_id = int(file_id)
+            except (ValueError, TypeError):
+                return ResponseUtils.error_response(
+                    message= "Invalid file id",
+                    status_code= status.HTTP_400_BAD_REQUEST
+                )
+            
+            # fetch file 
+            file = get_object_or_404(
+                File.objects.filter(
+                    id=file_id, 
+                    owner=request.user,
+                    expiration__gte=timezone.now()
+                )
+            )
+            
+            if file.is_shareable:
+                file.is_shareable = False
+                file.save()
+                return ResponseUtils.success_response(
+                    message= "Shareable option is off",
+                    status_code= status.HTTP_200_OK
+                )
+            else:
+                file.is_shareable = True 
+                file.save()
+                return ResponseUtils.success_response(
+                    message= "Shareable option is on",
+                    status_code= status.HTTP_200_OK
+                )
+        except Exception as e:
+            logger.error(f": Error toggling file shareability: {e}", exc_info=True)
+            return ResponseUtils.error_response(
+                message= "An unexpected error occurred",
+                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
