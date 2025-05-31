@@ -12,15 +12,15 @@ import secrets
 
 from util.api_response import ResponseUtils
 from .serializers import (
-    UserRegistrationSerializer,
-    UserLoginSerializer,
-    UserChangePasswordSerializer,
-    UserForgotPasswordSerializer,
-    UserEmailActivationSerializer,
-    UserResetPasswordSerializer,
-    UserEmailChangeSerializer,
-    UserAccountReactivationSerializer,
-    UserLinkRequestSerializer,
+    SignupSerializer,
+    SigninSerializer,
+    ChangePasswordSerializer,
+    ForgotPasswordSerializer,
+    EmailActivationSerializer,
+    ResetPasswordSerializer,
+    ChangeEmailSerializer,
+    AccountReactivationSerializer,
+    EmailActivationRequestSerializer,
 )
 from .tasks import (
     send_signup_email, send_login_email,
@@ -37,9 +37,9 @@ User = get_user_model()
 logger = logging.getLogger('authentication')
 
 # create registration view
-class UserRegistrationView(APIView):
+class SignupView(APIView):
     permission_classes = [permissions.AllowAny,]
-    serializer_class = UserRegistrationSerializer
+    serializer_class = SignupSerializer
 
     # function to handle POST request
     def post(self, request, *args, **kwargs):
@@ -83,9 +83,9 @@ class UserRegistrationView(APIView):
 
 
 # create Login view
-class UserLoginView(APIView):
+class SigninView(APIView):
     permission_classes = [permissions.AllowAny,]
-    serializer_class = UserLoginSerializer
+    serializer_class = SigninSerializer
 
     # function to handle POST request
     def post(self, request, *args, **kwargs):
@@ -250,7 +250,7 @@ class UserLoginView(APIView):
 
 
 # create logout view
-class UserLogoutView(APIView):
+class SignoutView(APIView):
     permission_classes = [permissions.IsAuthenticated,]
 
     # function to handle POST request
@@ -297,9 +297,9 @@ class UserLogoutView(APIView):
 
 
 # create change password view
-class UserChangePasswordView(APIView):
+class ChangePasswordView(APIView):
     permission_classes = [permissions.IsAuthenticated, ]
-    serializer_class = UserChangePasswordSerializer
+    serializer_class = ChangePasswordSerializer
 
     # function to handle POST request
     def post(self, request, *args, **kwargs):
@@ -332,9 +332,9 @@ class UserChangePasswordView(APIView):
         )
 
 # create user forgot password view
-class UserForgotPasswordView(APIView):
+class ForgotPasswordView(APIView):
     permission_classes = [permissions.AllowAny,]
-    serializer_class = UserForgotPasswordSerializer
+    serializer_class = ForgotPasswordSerializer
 
     # function to handle POST request
     def post(self, request, *args, **kwarg):
@@ -375,9 +375,9 @@ class UserForgotPasswordView(APIView):
 
 
 # create reset password view
-class UserResetPasswordView(APIView):
+class ResetPasswordView(APIView):
     permission_classes = [permissions.AllowAny,]
-    serializer_class = UserResetPasswordSerializer
+    serializer_class = ResetPasswordSerializer
 
     # function to handle POST request
     def post(self, request, token, *args, **kwargs):
@@ -451,9 +451,9 @@ class UserResetPasswordView(APIView):
             raise AuthenticationFailed("Failed to logout user from older devices")
 
 # email verification view
-class UserEmailVerification(APIView):
+class EmailVerificationView(APIView):
     permission_classes = [permissions.AllowAny,]
-    serializer_class = UserEmailActivationSerializer
+    serializer_class = EmailActivationSerializer
 
     # function to handle POST request
     def post(self, request, token, *args, **kwargs):
@@ -509,9 +509,9 @@ class UserEmailVerification(APIView):
 
     
 # account reactivation view
-class UserAccountReactivation(APIView):
+class AccountReactivationView(APIView):
     permission_classes = [permissions.AllowAny,]
-    serializer_class = UserAccountReactivationSerializer
+    serializer_class = AccountReactivationSerializer
 
     # function to handle POST request
     def post(self, request, token, *args, **kwargs):
@@ -567,9 +567,9 @@ class UserAccountReactivation(APIView):
         )
     
 # change email 
-class UserEmailChange(APIView):
+class ChangeEmailView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-    serializer_class = UserEmailChangeSerializer
+    serializer_class = ChangeEmailSerializer
 
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(request.data)
@@ -601,9 +601,9 @@ class UserEmailChange(APIView):
         )
 
 # email verification link request 
-class EmailVerificationLinkRequest(APIView):
+class EmailActivationRequestView(APIView):
     permission_classes = [permissions.AllowAny, ]
-    serializer_class = UserLinkRequestSerializer
+    serializer_class = EmailActivationRequestSerializer
 
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
@@ -642,9 +642,9 @@ class EmailVerificationLinkRequest(APIView):
     
 
 # account reactivation link request 
-class AccountActivationLinkRequest(APIView):
+class AccountReactivationRequestView(APIView):
     permission_classes = [permissions.AllowAny, ]
-    serializer_class = UserLinkRequestSerializer
+    serializer_class = EmailActivationRequestSerializer
 
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
@@ -683,9 +683,9 @@ class AccountActivationLinkRequest(APIView):
     
 
 # password reset link request 
-class PasswordResetLinkRequest(APIView):
+class PasswordResetRequestView(APIView):
     permission_classes = [permissions.AllowAny, ]
-    serializer_class = UserLinkRequestSerializer
+    serializer_class = EmailActivationRequestSerializer
 
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
@@ -724,7 +724,7 @@ class PasswordResetLinkRequest(APIView):
     
     
 # account disablement request 
-class DisableAccount(APIView):
+class DisableAccountView(APIView):
     permission_classes = [permissions.IsAuthenticated,]
 
     def post(self, request, *args, **kwargs):
@@ -733,6 +733,7 @@ class DisableAccount(APIView):
             user.is_disabled = True
             user.disabled_at = timezone.Now()
             user.save()
+            # blacklist user token 
             
             return ResponseUtils.success_response(
                 message= "Account diabled successfully",
