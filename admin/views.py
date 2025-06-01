@@ -1,5 +1,6 @@
 from django.http import Http404
 from django.shortcuts import render
+from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework import permissions, status
 from django.contrib.auth import get_user_model
@@ -162,3 +163,65 @@ class GetUserDetails(APIView):
                 message= "An unexpected error occurred",
                 status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+# lock user account view 
+class LockAccount(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, pk, *args, **Kwargs):
+        user_id = request.data.get('user_id')
+        try:
+            user = User.objects.get(id=user_id)
+            if not user:
+                return ResponseUtils.error_response(
+                    message= "User does not exist",
+                    status_code= status.HTTP_404_NOT_FOUND
+                )
+            user.is_locked = True 
+            user.save()
+            logger.info(f": User {request.user} locked {user}'s account")
+            return ResponseUtils.success_response(
+                message= "Account locked successfully",
+                status_code= status.HTTP_200_OK
+            )
+        
+        except Exception as e:
+            logger.error(f": Error locking user account: {e}", exc_info=True)
+            return ResponseUtils.error_response(
+                message= "An unexpected error occurred",
+                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+# disable user account view 
+class DisableAccount(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, pk, *args, **Kwargs):
+        user_id = request.data.get('user_id')
+        try:
+            user = User.objects.get(id=user_id)
+            if not user:
+                return ResponseUtils.error_response(
+                    message= "User does not exist",
+                    status_code= status.HTTP_404_NOT_FOUND
+                )
+            user.is_disabled = True 
+            user.save()
+            
+            # add disabled account to 'to_be_deleted model'
+            to_be_deleted = DeletionSchedule.objects.create(user=user)
+            to_be_deleted.save()
+
+            logger.info(f": User {request.user} disabled {user}'s account")
+            return ResponseUtils.success_response(
+                message= "Account disabled successfully",
+                status_code= status.HTTP_200_OK
+            )
+        
+        except Exception as e:
+            logger.error(f": Error disabling user account: {e}", exc_info=True)
+            return ResponseUtils.error_response(
+                message= "An unexpected error occurred",
+                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
