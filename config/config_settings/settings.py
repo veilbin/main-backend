@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     'authentication',
     'users',
     'files',
+    'admin',
 
 
     # libraries 
