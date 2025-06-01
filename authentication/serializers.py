@@ -228,3 +228,11 @@ class ChangeEmailSerializer(serializers.ModelSerializer):
 # new link request serializer 
 class EmailActivationRequestSeriaizer(serializers.Serializer):
     email = serializers.EmailField(required=True)
+
+
+# user serializer 
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = '__all__'
+        
