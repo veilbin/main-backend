@@ -6,12 +6,14 @@ from . import BASE_DIR
 authentication_dir = os.path.join(BASE_DIR, 'logs', 'authentication_logs')
 users_dir = os.path.join(BASE_DIR, 'logs', 'users_logs')
 file_dir = os.path.join(BASE_DIR, 'logs', 'file_logs')
+admin_dir = os.path.join(BASE_DIR, 'logs', 'admin_logs')
 general_dir = os.path.join(BASE_DIR, 'logs', 'general_logs')
 
 # create directories or skip if they already exists
 os.makedirs(authentication_dir, exist_ok=True)
 os.makedirs(users_dir, exist_ok=True)
 os.makedirs(file_dir, exist_ok=True)
+os.makedirs(admin_dir, exist_ok=True)
 os.makedirs(general_dir, exist_ok=True)
 
 # configure logging
@@ -50,6 +52,13 @@ LOGGING = {
             'filename': os.path.join(file_dir, 'files_log.log'),
             'formatter': 'verbose',
         },
+        # log settings for admin app
+        'admin_file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(file_dir, 'admin_log.log'),
+            'formatter': 'verbose',
+        },
         # general log settings for django app
         'general_file': {
             'level': 'DEBUG',
@@ -76,6 +85,11 @@ LOGGING = {
         },
         'files': {
           'handlers': ['files_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'admin': {
+          'handlers': ['admin_file'],
             'level': 'DEBUG',
             'propagate': False,
         },
