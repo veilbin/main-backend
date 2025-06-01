@@ -19,7 +19,7 @@ logger = logging.getLogger("files")
 
 # create/upload file
 class FileView(APIView):
-    permission_classes = [permissions.IsAuthenticated,]
+    permission_classes = [permissions.IsAuthenticated]
     serializer_class = FileSeriailizer
 
     # queryset
@@ -87,7 +87,7 @@ class FileView(APIView):
 
 # file details view 
 class FileDetailView(APIView):
-    permission_classes = [permissions.IsAuthenticated,]
+    permission_classes = [permissions.IsAuthenticated]
     serializer_class = FileSeriailizer
 
     # get object 
@@ -124,6 +124,22 @@ class FileDetailView(APIView):
                 status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
+    # delete file 
+    def delete(self, request, pk, *args,**kwargs):
+        try:
+            file = self.get_object(pk)
+            file.delete()
+            return ResponseUtils.success_response(
+                message= "File deleted",
+                status_code= status.HTTP_200_OK
+            )
+        
+        except Exception as e:
+            logger.error(f": Error deleting file: {e}", exc_info=True)
+            return ResponseUtils.error_response(
+                message= "An unexpected error occurred",
+                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 # file share view 
 class FileShareView(APIView):
