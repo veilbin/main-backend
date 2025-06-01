@@ -10,6 +10,7 @@ from datetime import timedelta, time
 import logging
 import secrets
 
+from admin.models import DeletionSchedule
 from util.api_response import ResponseUtils
 from .serializers import (
     SignupSerializer,
@@ -730,11 +731,17 @@ class DisableAccountView(APIView):
     def post(self, request, *args, **kwargs):
         user = self.request.user 
         try:
-            user.is_disabled = True
-            user.disabled_at = timezone.Now()
-            user.save()
+            with transaction.atomic():
+                user.is_disabled = True
+                user.disabled_at = timezone.Now()
+                user.save(update_fields=["is_disabled", "is_disabled_at"])
+
             # blacklist user token 
             
+            # add user to to be deleted model 
+            to_be_deleted = DeletionSchedule.objects.create(user=user)
+            to_be_deleted.save()
+
             return ResponseUtils.success_response(
                 message= "Account diabled successfully",
                 status_code= status.HTTP_200_OK
