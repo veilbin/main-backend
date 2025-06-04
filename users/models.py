@@ -11,7 +11,17 @@ class Profile(models.Model):
     updated_at = models.DateField(auto_now=True)
 
     def __str__(self):
-        return self.user
+        return self.user.email
     
     class Meta:
         ordering = ['-created_at']
+
+
+# accounts sechduled for deletion 
+class DeletionSchedule(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='admin_user')
+    request_date = models.DateTimeField(auto_now_add=True)
+    approved = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.user.email

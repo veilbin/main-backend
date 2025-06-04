@@ -3,6 +3,7 @@ from django.utils import timezone
 from django.contrib.auth.models import AbstractBaseUser,BaseUserManager,PermissionsMixin
 
 
+
 # create custom user model 
 class CustomUserManager(BaseUserManager):
     
@@ -70,6 +71,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     class Meta:
         ordering = ['-created_at']
-        verbose_name = 'CustomUser'
-        verbose_name_plural = 'CustomUsers'
+        # verbose_name = 'CustomUser'
+        # verbose_name_plural = 'CustomUsers'
     

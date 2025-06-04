@@ -6,6 +6,7 @@ User = get_user_model()
 
 # create user registration serializer
 class SignupSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(required=True)
     password = serializers.CharField(required=True)
     password_again = serializers.CharField(required=True)
 
@@ -14,7 +15,7 @@ class SignupSerializer(serializers.ModelSerializer):
         fields = ['email', 'password', 'password_again']
 
     # validate email
-    def validate_email(self, value: str) -> str:
+    def validate_email(self, value):
         # create dictionary to store all errors
         errors = {}
 
@@ -30,10 +31,11 @@ class SignupSerializer(serializers.ModelSerializer):
         # check for errors
         if errors:
             raise serializers.ValidationError(errors)
+        
         return value
 
     # validate password
-    def validate(self, data) -> str:
+    def validate(self, data):
         # create dictionary to record errors
         errors = {}
         # get values from data
@@ -155,7 +157,7 @@ class ResetPasswordSerializer(serializers.Serializer):
     def validate(self, data):
         errors = {}
         # get values from data
-        token = data.get(token)
+        token = data.get('password_reset_token')
         new_password = data.get('new_password')
         new_password_again = data.get('new_password_again')
 
@@ -198,15 +200,11 @@ class AccountReactivationSerializer(serializers.Serializer):
     account_reactivation_token = serializers.CharField(required=True)
 
 # change email serializer 
-class ChangeEmailSerializer(serializers.ModelSerializer):
+class ChangeEmailSerializer(serializers.Serializer):
     new_email = serializers.EmailField(max_length=80, required=True)
 
-    class Meta:
-        model = User 
-        fields = ['email']
-
     # validate email 
-    def validate_email(self, value: str) -> str:
+    def validate_new_email(self, value):
         # create dictionary to store all errors
         errors = {}
         user = self.context['request'].user
@@ -226,7 +224,7 @@ class ChangeEmailSerializer(serializers.ModelSerializer):
         return value
     
 # new link request serializer 
-class EmailActivationRequestSeriaizer(serializers.Serializer):
+class EmailActivationRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
 
 
@@ -234,5 +232,5 @@ class EmailActivationRequestSeriaizer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = '__all__'
+        fields = '__all__' 
         

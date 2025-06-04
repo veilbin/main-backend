@@ -1,4 +1,5 @@
-from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+from tokenize import TokenError
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from django.contrib.auth import authenticate, get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import status, permissions
@@ -10,7 +11,7 @@ from datetime import timedelta, time
 import logging
 import secrets
 
-from admin.models import DeletionSchedule
+from users.models import DeletionSchedule
 from util.api_response import ResponseUtils
 from .serializers import (
     SignupSerializer,
@@ -35,7 +36,7 @@ from .tasks import (
 # define user
 User = get_user_model()
 # initiate logger
-logger = logging.getLogger('authentication')
+logger = logging.getLogger('authentication') 
 
 # create registration view
 class SignupView(APIView):
@@ -52,6 +53,7 @@ class SignupView(APIView):
                     email = email
                 )
                 user.set_password(serializer.validated_data['password'])
+                user.save()
                 token = secrets.token_urlsafe(32)
                 # save user model together with token
                 with transaction.atomic():
@@ -256,45 +258,32 @@ class SignoutView(APIView):
 
     # function to handle POST request
     def post(self, request, *args, **kwargs):
-        # extract token from authorization header
-        token = self.get_bearer_token(request.headers.get('Authorization'))
-        if not token:
-            # log warning
-            logger.warning(": A logout attempt without a bearer token was made", exc_info=True)
+        refresh_token = request.data.get("refresh_token")
+
+        if not refresh_token:
             return ResponseUtils.error_response(
-                message="Authorization header must contain a valid bearer token",
-                status_code= status.HTTP_403_FORBIDDEN
-            )
-        # try to blacklist token
-        try:
-            logout_token = RefreshToken(token)
-            logout_token.blacklist()
-            return ResponseUtils.success_response(
-                message= "Logout successful",
-                status_code= status.HTTP_204_NO_CONTENT
-            )
-        except ValidationError:
-            return ResponseUtils.error_response(
-                message= "Token provided is invalid",
-                status_code= status.HTTP_400_BAD_REQUEST
-            )
-        except Exception as e:
-            # log error
-            logger.error(f": An unexpected error occurred while blacklisting token: {e}", exc_info=True)
-            return ResponseUtils.error_response(
-                message= "An unexpected error occurred. Please try again later",
-                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+                message="Refresh token is required",
+                status_code=status.HTTP_400_BAD_REQUEST
             )
 
-    # create function to get bearer token
-    def get_bearer_token(self, authorization_header):
-        # extract and validate the bearer token from authorization header
-        if not authorization_header:
-            return None
-        parts = authorization_header.split()
-        if len(parts) == 2 and parts[0].lower == 'bearer':
-            return parts[1]
-        return  None
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            return ResponseUtils.success_response(
+                message="Logout successful",
+                status_code=status.HTTP_204_NO_CONTENT
+            )
+        except TokenError:
+            return ResponseUtils.error_response(
+                message="Invalid or expired refresh token",
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error during logout: {e}", exc_info=True)
+            return ResponseUtils.error_response(
+                message="Internal server error",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 # create change password view
@@ -320,6 +309,8 @@ class ChangePasswordView(APIView):
                     message="Password changed successfully.",
                     status_code= status.HTTP_200_OK
                 )
+                self.blacklist_user_tokens(user)
+
             except  Exception as e:
                 logger.error(f": An unexpected error occurred while changing user {user.email} password: {e}", exc_info=True)
                 return ResponseUtils.error_response(
@@ -331,6 +322,24 @@ class ChangePasswordView(APIView):
             details= serializer.errors,
             status_code= status.HTTP_400_BAD_REQUEST
         )
+    
+    # create function to blacklist user token
+    def blacklist_user_tokens(self, user):
+        try:
+            # retrieve all user's outstanding tokens
+            tokens = OutstandingToken.objects.filter(user=user)
+            # blacklist tokens
+            for token in tokens:
+                BlacklistedToken.objects.get_or_create(token=token)
+        except Exception as e:
+            logger.error(f": An unexpected error occurred while blacklisting user token after password reset: {e}",
+                         exc_info=True)
+            return ResponseUtils.error_response(
+                message= "An unexpected error occurred",
+                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 
 # create user forgot password view
 class ForgotPasswordView(APIView):
@@ -343,6 +352,11 @@ class ForgotPasswordView(APIView):
         if serializer.is_valid():
             email = serializer.validated_data['email']
             user = User.objects.get(email__iexact=email)
+            if not user:
+                return ResponseUtils.error_response(
+                    message= "User does not exist",
+                    status_code= status.HTTP_404_NOT_FOUND
+                )
             
             try:
                 # generate secret token
@@ -381,12 +395,17 @@ class ResetPasswordView(APIView):
     serializer_class = ResetPasswordSerializer
 
     # function to handle POST request
-    def post(self, request, token, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             token = serializer.validated_data['password_reset_token']
             password = serializer.validated_data['new_password']
             user = User.objects.filter(password_reset_token__iexact=token).first()
+            if not user:
+                return ResponseUtils.error_response(
+                    message= "User does not exist",
+                    status_code= status.HTTP_404_NOT_FOUND
+                )
             email = user.email 
             try:
                 if user:
@@ -444,12 +463,14 @@ class ResetPasswordView(APIView):
             tokens = OutstandingToken.objects.filter(user=user)
             # blacklist tokens
             for token in tokens:
-                token.blacklisted = True
-                token.save()
+                BlacklistedToken.objects.get_or_create(token=token)
         except Exception as e:
             logger.error(f": An unexpected error occurred while blacklisting user token after password reset: {e}",
                          exc_info=True)
-            raise AuthenticationFailed("Failed to logout user from older devices")
+            return ResponseUtils.error_response(
+                message= "An unexpected error occurred",
+                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 # email verification view
 class EmailVerificationView(APIView):
@@ -457,11 +478,16 @@ class EmailVerificationView(APIView):
     serializer_class = EmailActivationSerializer
 
     # function to handle POST request
-    def post(self, request, token, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             token = serializer.validated_data['email_activation_token']
             user = User.objects.filter(email_verification_token__iexact=token).first()
+            if not user:
+                return ResponseUtils.error_response(
+                    message= "User does not exist",
+                    status_code= status.HTTP_404_NOT_FOUND
+                )
             email = user.email
             try:
                 if user:
@@ -515,11 +541,17 @@ class AccountReactivationView(APIView):
     serializer_class = AccountReactivationSerializer
 
     # function to handle POST request
-    def post(self, request, token, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             token = serializer.validated_data['account_reactivation_token']
-            user = User.objects.filter(account_reactivation_token__iexact=token).first()
+            user = User.objects.filter(reactivation_token__iexact=token).first()
+            if not user:
+                return ResponseUtils.error_response(
+                    message= "User does not exist",
+                    status_code= status.HTTP_404_NOT_FOUND
+                )
+            
             email = user.email
             try:
                 if user:
@@ -573,9 +605,8 @@ class ChangeEmailView(APIView):
     serializer_class = ChangeEmailSerializer
 
     def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(request.data)
+        serializer = self.serializer_class(data=request.data, context={'request':request})
         user = request.user
-
         if serializer.is_valid():
             try:
                 new_email = serializer.validated_data['new_email']
@@ -608,10 +639,15 @@ class EmailActivationRequestView(APIView):
 
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
-        email = serializer.validated_data["email"]
-        user = User.objects.filter(email__iexact=email).first()
         if serializer.is_valid():
             try:
+                email = serializer.validated_data["email"]
+                user = User.objects.filter(email__iexact=email).first()
+                if not user:
+                    return ResponseUtils.error_response(
+                        message= "User does not exist",
+                        status_code= status.HTTP_404_NOT_FOUND
+                    )
                 # generate secret token
                 token = secrets.token_urlsafe(32)
                 # save token to user model
@@ -649,10 +685,15 @@ class AccountReactivationRequestView(APIView):
 
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
-        email = serializer.validated_data["email"]
-        user = User.objects.filter(email__iexact=email).first()
         if serializer.is_valid():
             try:
+                email = serializer.validated_data["email"]
+                user = User.objects.filter(email__iexact=email).first()
+                if not user:
+                    return ResponseUtils.error_response(
+                        message= "User does not exist",
+                        status_code= status.HTTP_404_NOT_FOUND
+                    )
                 # generate secret token
                 token = secrets.token_urlsafe(32)
                 # save token to user model
@@ -690,10 +731,21 @@ class PasswordResetRequestView(APIView):
 
     def post(self, request, *args, **kwargs):
         serializer = self.serializer_class(data=request.data)
-        email = serializer.validated_data["email"]
-        user = User.objects.filter(email__iexact=email).first()
         if serializer.is_valid():
             try:
+                email = serializer.validated_data["email"]
+                user = User.objects.filter(email__iexact=email).first()
+                if not user:
+                    return ResponseUtils.error_response(
+                        message= "User does not exist",
+                        status_code= status.HTTP_404_NOT_FOUND
+                    )
+                if user.is_disabled:
+                    # send email 
+                    return ResponseUtils.error_response(
+                        message= "Your account is disabled. You will receive an email on how to reactivate your account",
+                        status_code= status.HTTP_401_UNAUTHORIZED
+                    )
                 # generate secret token
                 token = secrets.token_urlsafe(32)
                 # save token to user model
@@ -733,8 +785,8 @@ class DisableAccountView(APIView):
         try:
             with transaction.atomic():
                 user.is_disabled = True
-                user.disabled_at = timezone.Now()
-                user.save(update_fields=["is_disabled", "is_disabled_at"])
+                user.disabled_at = timezone.now()
+                user.save(update_fields=["is_disabled", "disabled_at"])
 
             # blacklist user token 
             

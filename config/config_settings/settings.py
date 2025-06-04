@@ -23,12 +23,12 @@ INSTALLED_APPS = [
     'authentication',
     'users',
     'files',
-    'admin',
 
 
     # libraries 
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
+    'django_celery_results',
 ]
 
 MIDDLEWARE = [
@@ -46,7 +46,9 @@ ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'templates'), os.path.join(BASE_DIR,'authentication/templates'),
+                os.path.join(BASE_DIR, 'users/templates', os.path.join(BASE_DIR, 'files/templates'))
+                ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -105,6 +107,7 @@ STATIC_URL = 'static/'
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+AUTH_USER_MODEL = 'authentication.CustomUser'
 
 # Default email backed
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND')
