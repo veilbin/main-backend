@@ -1,5 +1,5 @@
 from django.http import Http404
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework import permissions, status
@@ -7,109 +7,121 @@ from django.contrib.auth import get_user_model
 import logging
 
 from util.api_response import ResponseUtils
-from .models import DeletionSchedule
-from authentication.serializers import UserSerializer
+from .models import DeletionSchedule, Profile
+from .serializers import ProfileSerializer
 
 User = get_user_model()
 logger = logging.getLogger('admin')
 
-# get all users 
-class GetUsers(APIView):
-    permission_classes = [permissions.IsAdminUser]
-    serializer_class = UserSerializer
+# get profile 
+class ProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ProfileSerializer
 
     # get queryset 
     def get_queryset(self):
-        return User.objects.all()
+        try:
+            user = self.request.user
+            return get_object_or_404(
+                Profile.objects.filter(  
+                    user=user,
+                )
+            )
+        except Exception as e:
+            logger.error(f": Error fecthing profile of {user}: {e}", exc_info=True)
+            return ResponseUtils.error_response(
+                message= "An unexpected error occurred",
+                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     # get request 
     def get(self, request, *args, **kwargs):
         try:
-            user = self.get_queryset()
-            serializer = self.serializer_class(user, many=True if isinstance(user, list) else False)
+            profile = self.get_queryset()
+            serializer = self.serializer_class(profile, many=True if isinstance(profile, list) else False)
             return ResponseUtils.success_response(
-                message = "users fetched",
+                message = "profile fetched",
                 data= serializer.data,
                 status_code= status.HTTP_200_OK
             )
         except Exception as e:
-            logger.error(f": Error fetching all users: {e}", exc_info=True)
+            logger.error(f": Error gettng the profile of {request.user}: {e}", exc_info=True)
             return ResponseUtils.error_response(
                 message= "An unexpected error occurred",
                 status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
-    # create user 
-    def post(self, request, *args, **kwargs):
-        try:
-            serializer = UserSerializer(data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                logger.info(f": New user created by {request.user}")
-                return ResponseUtils.success_response(
-                    message= "User created",
-                    status_code= status.HTTP_201_CREATED
-                )
-            return ResponseUtils.error_response(
-                message= "Invalid data format",
-                details= serializer.errors,
-                status_code= status.HTTP_400_BAD_REQUEST
-            )
-        except Exception as e:
-            logger.error(f": Error creating new user: {e}", exc_info=True)
-            return ResponseUtils.error_response(
-                message= "Unable to create user",
-                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+    # # create profile 
+    # def post(self, request, *args, **kwargs):
+    #     try:
+    #         serializer = ProfileSerializer(data=request.data)
+    #         if serializer.is_valid():
+    #             serializer.save()
+    #             logger.info(f": New profile created by {request.user}")
+    #             return ResponseUtils.success_response(
+    #                 message= "Profile created",
+    #                 status_code= status.HTTP_201_CREATED
+    #             )
+    #         return ResponseUtils.error_response(
+    #             message= "Invalid data format",
+    #             details= serializer.errors,
+    #             status_code= status.HTTP_400_BAD_REQUEST
+    #         )
+    #     except Exception as e:
+    #         logger.error(f": Error creating new profile {request.user}: {e}", exc_info=True)
+    #         return ResponseUtils.error_response(
+    #             message= "Unable to create user",
+    #             status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+    #         )
 
 
-# get users details 
-class GetUserDetails(APIView):
-    permission_classes = [permissions.IsAdminUser]
-    serializer_class = UserSerializer
+# get profile details 
+class ProfileDetails(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ProfileSerializer
 
     def get_object(self, pk):
         try:
-            return User.objects.filter(pk=pk).first()
+            return Profile.objects.filter(pk=pk).first()
         
-        except User.DoesNotExist():
-            return Http404("User does not exist")
+        except Profile.DoesNotExist():
+            return Http404("Profile does not exist")
         
         except Exception as e:
-            logger.error(f": Error fetching users details: {e}", exc_info=True)
+            logger.error(f": Error fetching profile details: {e}", exc_info=True)
             return ResponseUtils.error_response(
                 message= "An unexpected error occurred",
                 status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
             ) 
     
-    # get user 
+    # get profile 
     def get(self, request, pk, *args, **kwargs):
         try:
-            user = self.get_object(pk)
-            serializer = self.serializer_class(user)
-            logger.info(f": User {request.user} accessed {user}'s data")
+            profile = self.get_object(pk)
+            serializer = self.serializer_class(profile)
+            logger.info(f": User {request.user} accessed {profile}'s data")
             return ResponseUtils.success_response(
-                message= "User data fetched",
+                message= "Profile data fetched",
                 data= serializer.data,
                 status_code= status.HTTP_200_OK
             )
         except Exception as e:
-            logger.error(f": Error fetching user data: {e}", exc_info=True)
+            logger.error(f": Error fetching profile data: {e}", exc_info=True)
             return ResponseUtils.error_response(
                 message= "An unexpected error occurred",
                 status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
-    # update user using put method 
+    # update profile using put method 
     def put(self, request, pk, *args, **kwargs):
         try:
-            user = self.get_object(pk)
-            serializer = self.serializer_class(user, data=request.data, partial=True, context={'request':request})
+            profile = self.get_object(pk)
+            serializer = self.serializer_class(profile, data=request.data, partial=True, context={'request':request})
             if serializer.is_valid():
                 serializer.save()
-                logger.info(f": user {request.user} updated {user}'s details")
+                logger.info(f": user {request.user} updated {profile}'s details")
                 return ResponseUtils.error_response(
-                    message= "User details updated",
+                    message= "Profile details updated",
                     status_code= status.HTTP_200_OK
                 )
             return ResponseUtils.error_response(
@@ -117,22 +129,22 @@ class GetUserDetails(APIView):
                 status_code= status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
-            logger.error(f": Error updating user data: {e}", exc_info=True)
+            logger.error(f": Error updating profile data: {e}", exc_info=True)
             return ResponseUtils.error_response(
                 message= "An unexpected error occurred",
                 status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
-    # update user using patch method 
+    # update profile using patch method 
     def patch(self, request, pk, *args, **kwargs):
         try:
-            user = self.get_object(pk)
-            serializer = self.serializer_class(user, data=request.data, context={'request':request})
+            profile = self.get_object(pk)
+            serializer = self.serializer_class(profile, data=request.data, context={'request':request})
             if serializer.is_valid():
                 serializer.save()
-                logger.info(f": user {request.user} updated {user}'s details")
+                logger.info(f": user {request.user} updated {profile}'s details")
                 return ResponseUtils.error_response(
-                    message= "User details updated",
+                    message= "Profile details updated",
                     status_code= status.HTTP_200_OK
                 )
             return ResponseUtils.error_response(
@@ -147,31 +159,30 @@ class GetUserDetails(APIView):
             )
         
     
-    def delete(self, request, pk, *args, **kwargs):
-        try:
-            user = self.get_object(pk)
-            logger.info(f": user {request.user} is making a delete request for {user}'s account")
-            user.delete()
-            return ResponseUtils.success_response(
-                message= "User account deleted",
-                status_code= status.HTTP_200_OK
-            )
+    # def delete(self, request, pk, *args, **kwargs):
+    #     try:
+    #         profile = self.get_object(pk)
+    #         logger.info(f": user {request.user} is making a delete request for {profile}'s account")
+    #         profile.delete()
+    #         return ResponseUtils.success_response(
+    #             message= "Profile account deleted",
+    #             status_code= status.HTTP_200_OK
+    #         )
         
-        except Exception as e:
-            logger.error(f": Error deleting user account: {e}", exc_info=True)
-            return ResponseUtils.error_response(
-                message= "An unexpected error occurred",
-                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+    #     except Exception as e:
+    #         logger.error(f": Error deleting user account: {e}", exc_info=True)
+    #         return ResponseUtils.error_response(
+    #             message= "An unexpected error occurred",
+    #             status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+    #         )
 
 # lock user account view 
 class LockAccount(APIView):
     permission_classes = [permissions.IsAdminUser]
 
     def post(self, request, pk, *args, **Kwargs):
-        user_id = request.data.get('user_id')
         try:
-            user = User.objects.get(id=user_id)
+            user = User.objects.get(pk=pk)
             if not user:
                 return ResponseUtils.error_response(
                     message= "User does not exist",
@@ -194,12 +205,11 @@ class LockAccount(APIView):
 
 # disable user account view 
 class DisableAccount(APIView):
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk, *args, **Kwargs):
-        user_id = request.data.get('user_id')
         try:
-            user = User.objects.get(id=user_id)
+            user = User.objects.get(pk=pk, user=request.user)
             if not user:
                 return ResponseUtils.error_response(
                     message= "User does not exist",
