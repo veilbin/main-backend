@@ -38,6 +38,24 @@ User = get_user_model()
 # initiate logger
 logger = logging.getLogger('authentication') 
 
+
+# create function to blacklist user token
+def blacklist_user_tokens(self, user):
+    try:
+        # retrieve all user's outstanding tokens
+        tokens = OutstandingToken.objects.filter(user=user)
+        # blacklist tokens
+        for token in tokens:
+            BlacklistedToken.objects.get_or_create(token=token)
+    except Exception as e:
+        logger.error(f": An unexpected error occurred while blacklisting user token after password reset: {e}",
+                        exc_info=True)
+        return ResponseUtils.error_response(
+            message= "An unexpected error occurred",
+            status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+
 # create registration view
 class SignupView(APIView):
     permission_classes = [permissions.AllowAny,]
@@ -285,62 +303,6 @@ class SignoutView(APIView):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-
-# create change password view
-class ChangePasswordView(APIView):
-    permission_classes = [permissions.IsAuthenticated, ]
-    serializer_class = ChangePasswordSerializer
-
-    # function to handle POST request
-    def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data, context={'request':request})
-        if serializer.is_valid():
-            try:
-                new_password = serializer.validated_data['new_password']
-                user = request.user
-                with transaction.atomic():
-                    user.set_password(new_password)
-                    user.last_password_reset = timezone.now()
-                    user.save(update_fields=["password", "last_password_reset"])
-                # send email
-                send_password_reset_success_email(recipient_list=[user.email, ])
-                logger.info(f": user {user.email} password was changed by {user}")
-                return ResponseUtils.success_response(
-                    message="Password changed successfully.",
-                    status_code= status.HTTP_200_OK
-                )
-                self.blacklist_user_tokens(user)
-
-            except  Exception as e:
-                logger.error(f": An unexpected error occurred while changing user {user.email} password: {e}", exc_info=True)
-                return ResponseUtils.error_response(
-                    message= "An unexpected error occurred. Please try again later.",
-                    status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        return ResponseUtils.error_response(
-            message= "Invalid data format.",
-            details= serializer.errors,
-            status_code= status.HTTP_400_BAD_REQUEST
-        )
-    
-    # create function to blacklist user token
-    def blacklist_user_tokens(self, user):
-        try:
-            # retrieve all user's outstanding tokens
-            tokens = OutstandingToken.objects.filter(user=user)
-            # blacklist tokens
-            for token in tokens:
-                BlacklistedToken.objects.get_or_create(token=token)
-        except Exception as e:
-            logger.error(f": An unexpected error occurred while blacklisting user token after password reset: {e}",
-                         exc_info=True)
-            return ResponseUtils.error_response(
-                message= "An unexpected error occurred",
-                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-
-
 # create user forgot password view
 class ForgotPasswordView(APIView):
     permission_classes = [permissions.AllowAny,]
@@ -429,7 +391,7 @@ class ResetPasswordView(APIView):
                             send_password_reset_success_email.delay(recipient_list=[email, ])
                             logger.info(f": Password reset for {email} was successfully done by {request.user}")
                             # logout the user by blacklisting all the user's token
-                            self.blacklist_user_tokens(user)
+                            blacklist_user_tokens(user)
                             return ResponseUtils.success_response(
                                 message="Password reset successful.",
                                 status_code=status.HTTP_200_OK
@@ -456,21 +418,96 @@ class ResetPasswordView(APIView):
             status_code= status.HTTP_400_BAD_REQUEST
         )
 
-    # create function to blacklist user token
-    def blacklist_user_tokens(self, user):
-        try:
-            # retrieve all user's outstanding tokens
-            tokens = OutstandingToken.objects.filter(user=user)
-            # blacklist tokens
-            for token in tokens:
-                BlacklistedToken.objects.get_or_create(token=token)
-        except Exception as e:
-            logger.error(f": An unexpected error occurred while blacklisting user token after password reset: {e}",
-                         exc_info=True)
-            return ResponseUtils.error_response(
-                message= "An unexpected error occurred",
-                status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+# create change password view
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated, ]
+    serializer_class = ChangePasswordSerializer
+
+    # function to handle POST request
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data, context={'request':request})
+        if serializer.is_valid():
+            try:
+                new_password = serializer.validated_data['new_password']
+                user = request.user
+                with transaction.atomic():
+                    user.set_password(new_password)
+                    user.last_password_reset = timezone.now()
+                    user.save(update_fields=["password", "last_password_reset"])
+                # send email
+                send_password_reset_success_email(recipient_list=[user.email, ])
+                logger.info(f": user {user.email} password was changed by {user}")
+                return ResponseUtils.success_response(
+                    message="Password changed successfully.",
+                    status_code= status.HTTP_200_OK
+                )
+                blacklist_user_tokens(user)
+
+            except  Exception as e:
+                logger.error(f": An unexpected error occurred while changing user {user.email} password: {e}", exc_info=True)
+                return ResponseUtils.error_response(
+                    message= "An unexpected error occurred. Please try again later.",
+                    status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        return ResponseUtils.error_response(
+            message= "Invalid data format.",
+            details= serializer.errors,
+            status_code= status.HTTP_400_BAD_REQUEST
+        )
+    
+
+# password reset link request 
+class PasswordResetRequestView(APIView):
+    permission_classes = [permissions.AllowAny, ]
+    serializer_class = EmailActivationRequestSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            try:
+                email = serializer.validated_data["email"]
+                user = User.objects.filter(email__iexact=email).first()
+                if not user:
+                    return ResponseUtils.error_response(
+                        message= "User does not exist",
+                        status_code= status.HTTP_404_NOT_FOUND
+                    )
+                if user.is_disabled:
+                    # send email 
+                    return ResponseUtils.error_response(
+                        message= "Your account is disabled. You will receive an email on how to reactivate your account",
+                        status_code= status.HTTP_401_UNAUTHORIZED
+                    )
+                # generate secret token
+                token = secrets.token_urlsafe(32)
+                # save token to user model
+                with transaction.atomic():
+                    user.password_reset_token = token
+                    user.password_reset_token_created_at = timezone.now()
+                    user.save(update_fields=["password_reset_token", "password_reset_token_created_at"])
+                # send email to user
+                send_password_reset_email.delay(
+                    url= request.build_absolute_uri(f"/api/auth/password_reset/{token}/"),
+                    recipient_list=[email,]
+                )
+                return ResponseUtils.success_response(
+                    message= "A new reset link has been sent to your email.",
+                    status_code= status.HTTP_200_OK
+                )
+            except Exception as e:
+                # log error
+                logger.error(f": An unexpected error occurred while requesting password reset link: {e}", exc_info=True)
+                return ResponseUtils.error_response(
+                    message= "An unexpected error occurred. Please try again later.",
+                    status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        return ResponseUtils.error_response(
+            message= "Invalid data format.",
+            details= serializer.errors,
+            status_code= status.HTTP_400_BAD_REQUEST
+        )
+   
+
 
 # email verification view
 class EmailVerificationView(APIView):
@@ -523,6 +560,87 @@ class EmailVerificationView(APIView):
             except Exception as e:
                 # log error
                 logger.error(f": An unexpected error occurred while verifiying email of {email}: {e}", exc_info=True)
+                return ResponseUtils.error_response(
+                    message= "An unexpected error occurred. Please try again later.",
+                    status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        return ResponseUtils.error_response(
+            message= "Invalid data format.",
+            details= serializer.errors,
+            status_code= status.HTTP_400_BAD_REQUEST
+        )
+    
+
+
+# email verification link request 
+class EmailActivationRequestView(APIView):
+    permission_classes = [permissions.AllowAny, ]
+    serializer_class = EmailActivationRequestSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            try:
+                email = serializer.validated_data["email"]
+                user = User.objects.filter(email__iexact=email).first()
+                if not user:
+                    return ResponseUtils.error_response(
+                        message= "User does not exist",
+                        status_code= status.HTTP_404_NOT_FOUND
+                    )
+                # generate secret token
+                token = secrets.token_urlsafe(32)
+                # save token to user model
+                with transaction.atomic():
+                    user.email_verification_token = token
+                    user.email_verification_token_created_at = timezone.now()
+                    user.save(update_fields=["email_verification_token", "email_verification_token_created_at"])
+                # send email to user
+                send_password_reset_email.delay(
+                    url= request.build_absolute_uri(f"/api/auth/verify_email/{token}/"),
+                    recipient_list=[email,]
+                )
+                return ResponseUtils.success_response(
+                    message= "A new verification link has been sent to your email.",
+                    status_code= status.HTTP_200_OK
+                )
+            except Exception as e:
+                # log error
+                logger.error(f": An unexpected error occurred while requesting email verification link: {e}", exc_info=True)
+                return ResponseUtils.error_response(
+                    message= "An unexpected error occurred. Please try again later.",
+                    status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        return ResponseUtils.error_response(
+            message= "Invalid data format.",
+            details= serializer.errors,
+            status_code= status.HTTP_400_BAD_REQUEST
+        )
+    
+   
+# change email 
+class ChangeEmailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ChangeEmailSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data, context={'request':request})
+        user = request.user
+        if serializer.is_valid():
+            try:
+                new_email = serializer.validated_data['new_email']
+                user.email = new_email
+                user.save()
+                
+                # send email to user 
+
+                return ResponseUtils.success_response(
+                    message= "Email changed successfully",
+                    status_code= status.HTTP_200_OK
+                )
+            except Exception as e:
+                # log error
+                logger.error(f": An unexpected error occurred while updating email of {user.email}: {e}", exc_info=True)
                 return ResponseUtils.error_response(
                     message= "An unexpected error occurred. Please try again later.",
                     status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -598,85 +716,8 @@ class AccountReactivationView(APIView):
             details= serializer.errors,
             status_code= status.HTTP_400_BAD_REQUEST
         )
-    
-# change email 
-class ChangeEmailView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-    serializer_class = ChangeEmailSerializer
+ 
 
-    def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data, context={'request':request})
-        user = request.user
-        if serializer.is_valid():
-            try:
-                new_email = serializer.validated_data['new_email']
-                user.email = new_email
-                user.save()
-                
-                # send email to user 
-
-                return ResponseUtils.success_response(
-                    message= "Email changed successfully",
-                    status_code= status.HTTP_200_OK
-                )
-            except Exception as e:
-                # log error
-                logger.error(f": An unexpected error occurred while updating email of {user.email}: {e}", exc_info=True)
-                return ResponseUtils.error_response(
-                    message= "An unexpected error occurred. Please try again later.",
-                    status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        return ResponseUtils.error_response(
-            message= "Invalid data format.",
-            details= serializer.errors,
-            status_code= status.HTTP_400_BAD_REQUEST
-        )
-
-# email verification link request 
-class EmailActivationRequestView(APIView):
-    permission_classes = [permissions.AllowAny, ]
-    serializer_class = EmailActivationRequestSerializer
-
-    def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data)
-        if serializer.is_valid():
-            try:
-                email = serializer.validated_data["email"]
-                user = User.objects.filter(email__iexact=email).first()
-                if not user:
-                    return ResponseUtils.error_response(
-                        message= "User does not exist",
-                        status_code= status.HTTP_404_NOT_FOUND
-                    )
-                # generate secret token
-                token = secrets.token_urlsafe(32)
-                # save token to user model
-                with transaction.atomic():
-                    user.email_verification_token = token
-                    user.email_verification_token_created_at = timezone.now()
-                    user.save(update_fields=["email_verification_token", "email_verification_token_created_at"])
-                # send email to user
-                send_password_reset_email.delay(
-                    url= request.build_absolute_uri(f"/api/auth/verify_email/{token}/"),
-                    recipient_list=[email,]
-                )
-                return ResponseUtils.success_response(
-                    message= "A new verification link has been sent to your email.",
-                    status_code= status.HTTP_200_OK
-                )
-            except Exception as e:
-                # log error
-                logger.error(f": An unexpected error occurred while requesting email verification link: {e}", exc_info=True)
-                return ResponseUtils.error_response(
-                    message= "An unexpected error occurred. Please try again later.",
-                    status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        return ResponseUtils.error_response(
-            message= "Invalid data format.",
-            details= serializer.errors,
-            status_code= status.HTTP_400_BAD_REQUEST
-        )
-    
 
 # account reactivation link request 
 class AccountReactivationRequestView(APIView):
@@ -723,59 +764,7 @@ class AccountReactivationRequestView(APIView):
             status_code= status.HTTP_400_BAD_REQUEST
         )
     
-
-# password reset link request 
-class PasswordResetRequestView(APIView):
-    permission_classes = [permissions.AllowAny, ]
-    serializer_class = EmailActivationRequestSerializer
-
-    def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data)
-        if serializer.is_valid():
-            try:
-                email = serializer.validated_data["email"]
-                user = User.objects.filter(email__iexact=email).first()
-                if not user:
-                    return ResponseUtils.error_response(
-                        message= "User does not exist",
-                        status_code= status.HTTP_404_NOT_FOUND
-                    )
-                if user.is_disabled:
-                    # send email 
-                    return ResponseUtils.error_response(
-                        message= "Your account is disabled. You will receive an email on how to reactivate your account",
-                        status_code= status.HTTP_401_UNAUTHORIZED
-                    )
-                # generate secret token
-                token = secrets.token_urlsafe(32)
-                # save token to user model
-                with transaction.atomic():
-                    user.password_reset_token = token
-                    user.password_reset_token_created_at = timezone.now()
-                    user.save(update_fields=["password_reset_token", "password_reset_token_created_at"])
-                # send email to user
-                send_password_reset_email.delay(
-                    url= request.build_absolute_uri(f"/api/auth/password_reset/{token}/"),
-                    recipient_list=[email,]
-                )
-                return ResponseUtils.success_response(
-                    message= "A new reset link has been sent to your email.",
-                    status_code= status.HTTP_200_OK
-                )
-            except Exception as e:
-                # log error
-                logger.error(f": An unexpected error occurred while requesting password reset link: {e}", exc_info=True)
-                return ResponseUtils.error_response(
-                    message= "An unexpected error occurred. Please try again later.",
-                    status_code= status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        return ResponseUtils.error_response(
-            message= "Invalid data format.",
-            details= serializer.errors,
-            status_code= status.HTTP_400_BAD_REQUEST
-        )
-    
-    
+ 
 # account disablement request 
 class DisableAccountView(APIView):
     permission_classes = [permissions.IsAuthenticated,]
