@@ -1,12 +1,9 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
 from rest_framework.views import APIView
-from rest_framework.response import Response
 from django.contrib.auth import get_user_model
-from django.db import transaction
 from django.utils import timezone
 from django.http import Http404
-from datetime import time, timedelta
 import logging
 
 from util.api_response import ResponseUtils
@@ -24,9 +21,8 @@ class FileView(APIView):
 
     # queryset
     def get_queryset(self):
-        user = self.request.user
         try:
-            return File.objects.filter(owner=user, expiration__gte=timezone.now())
+            return File.objects.filter(owner=self.request.user, expiration__gte=timezone.now())
         except File.DoesNotExist:
             raise Http404("File does not exist")
         except Exception as e:
@@ -62,17 +58,18 @@ class FileView(APIView):
             file = serializer.validated_data['file']
             is_shareable = serializer.validated_data['is_shareable']
             expiration = serializer.validated_data['expiration']
+            user = request.user
             
             try:
                 created_file = File.objects.create(
                     filename = filename,
                     file = file,
                     is_shareable = is_shareable,
-                    owner = request.user,
+                    owner = user,
                     expiration = expiration
                 )
                 created_file.save()
-                logger.info(f": User {request.user} uploaded a new file")
+                logger.info(f": User {user} uploaded a new file")
                 return ResponseUtils.success_response(
                     message= "File uploaded",
                     status_code= status.HTTP_200_OK
@@ -110,7 +107,7 @@ class FileDetailView(APIView):
         try:
             file = self.get_object(pk)
             serializer = self.serializer_class(file)
-            logger.Info(f": user {self.request.user} accessed file {file}")
+            logger.Info(f": user {self.request.user} accessed file {file.filename}")
             return ResponseUtils.success_response(
                 message= "File fetched",
                 data= serializer.data,
@@ -148,6 +145,7 @@ class FileShareView(APIView):
 
     # get file 
     def get(self, request, share_token):
+        share_token = request.data.get('share_token')
         try:
             file = get_object_or_404(
                 File.objects.filter( 
@@ -157,12 +155,6 @@ class FileShareView(APIView):
                 ).first()
             )
 
-            if not file:
-                return ResponseUtils.error_response(
-                    message= "File not found",
-                    status_code= status.HTTP_404_NOT_FOUND
-                )
-            
             serializer = self.serializer_class(file, context={'request':request})
             return ResponseUtils.success_response(
                 message= "File fetched",
