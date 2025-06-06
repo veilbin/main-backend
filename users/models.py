@@ -15,11 +15,11 @@ class Profile(models.Model):
     
     class Meta:
         ordering = ['-created_at']
-
+ 
 
 # accounts sechduled for deletion 
 class DeletionSchedule(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='admin_user')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='deletion_schedule')
     request_date = models.DateTimeField(auto_now_add=True)
     approved = models.BooleanField(default=False)
 
